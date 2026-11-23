@@ -1,0 +1,15 @@
+{
+  "repo": ".",
+  "implementation_files": ["src/logic.py"],
+  "context_files": ["run_public.py"],
+  "working_tests": "python run_public.py",
+  "model": "mai-code-2",
+  "reasoning_effort": "medium",
+  "backend": "agency",
+  "budget": {
+    "max_agent_sessions": 1,
+    "max_model_requests": 10,
+    "max_wall_seconds": 120,
+    "max_verifier_wall_seconds": 30
+  }
+}
