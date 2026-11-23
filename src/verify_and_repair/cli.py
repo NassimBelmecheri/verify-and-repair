@@ -2,15 +2,15 @@ import argparse
 import json
 import os
 import uuid
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 
-from .api import TaskConfig, solve
+from .api import TaskConfig, solve, verify
 from .backends import BACKENDS
 from .contracts import contained_file
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(prog="verify-and-repair")
     commands = parser.add_subparsers(dest="cmd", required=True)
     configure = commands.add_parser(
@@ -25,6 +25,18 @@ def main():
     configure.add_argument("--agency-exe")
     configure.add_argument("--copilot-exe")
     configure.add_argument("--backend", choices=BACKENDS, default="agency")
+
+    verification = commands.add_parser(
+        "verify", help="Run project checks only; no model calls or automatic repair"
+    )
+    verification.add_argument("--repo", type=Path, required=True)
+    verification.add_argument("--working-tests", required=True)
+    verification.add_argument("--lint-command")
+    verification.add_argument("--typecheck-command")
+    verification.add_argument(
+        "--timeout-seconds", type=float, default=180, help="Timeout per check command"
+    )
+    verification.add_argument("--output", type=Path)
 
     repair = commands.add_parser(
         "solve", help="Lean repair with automatic tools fallback; public checks only"
@@ -73,6 +85,52 @@ def main():
         with target.open("x", encoding="utf-8") as stream:
             json.dump(data, stream, indent=2)
         print(json.dumps({"config": str(target), "profile": "lean"}))
+        return
+
+    if args.cmd == "verify":
+        try:
+            repo = args.repo.resolve()
+            output = (
+                args.output
+                or repo.parent
+                / "verify-and-repair-results"
+                / f"verify-{uuid.uuid4().hex}.json"
+            ).resolve()
+            if output.is_relative_to(repo):
+                raise ValueError("Verification artifacts must be outside the project")
+            if output.exists():
+                raise ValueError(
+                    f"Output already exists; refusing to overwrite: {output}"
+                )
+            checks = verify(
+                repo,
+                args.working_tests,
+                lint_command=args.lint_command,
+                typecheck_command=args.typecheck_command,
+                timeout_seconds=args.timeout_seconds,
+            )
+            verified = all(result.outcome == "pass" for result in checks.values())
+            report = {
+                "verified": verified,
+                "claim": "public_checks_only",
+                "repo": str(repo),
+                "checks": {name: asdict(result) for name, result in checks.items()},
+                "agent_sessions": 0,
+                "model_requests": 0,
+                "output": str(output),
+                "private_evaluation": "not run; public checks are not proof of task correctness",
+            }
+            output.parent.mkdir(parents=True, exist_ok=True)
+            with output.open("x", encoding="utf-8") as stream:
+                json.dump(report, stream, indent=2)
+        except (ValueError, OSError, TypeError) as error:
+            parser.error(str(error))
+        print(json.dumps(report, indent=2))
+        if not verified:
+            infrastructure_error = any(
+                result.outcome in {"error", "timeout"} for result in checks.values()
+            )
+            raise SystemExit(2 if infrastructure_error else 1)
         return
 
     try:

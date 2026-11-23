@@ -1,4 +1,5 @@
 import json
+import sys
 
 import pytest
 
@@ -237,3 +238,142 @@ def test_configure_and_solve_can_select_copilot(config_path, monkeypatch, capsys
     )
     cli.main()
     assert json.loads(capsys.readouterr().out)["backend"] == "agency"
+
+
+@pytest.fixture
+def forbid_repairs(monkeypatch):
+    def forbidden(*args, **kwargs):
+        pytest.fail("Checks-only verification must not start a repair or model session")
+
+    monkeypatch.setattr(api, "HybridController", forbidden)
+    monkeypatch.setattr(cli, "solve", forbidden)
+
+
+@pytest.mark.parametrize("exit_code", [0, 1])
+def test_verify_checks_new_non_python_files_without_a_config_or_git(
+    tmp_path, forbid_repairs, exit_code
+):
+    source = tmp_path / "new.js"
+    source.write_text("export const value = 1;\n", encoding="utf-8")
+    check = tmp_path / "check.py"
+    check.write_text(
+        "from pathlib import Path\n"
+        "assert Path('new.js').read_text().startswith('export const value')\n"
+        f"raise SystemExit({exit_code})\n",
+        encoding="utf-8",
+    )
+    before = source.read_bytes()
+    results = api.verify(
+        tmp_path,
+        f'"{sys.executable}" check.py',
+        lint_command=f'"{sys.executable}" -c "print(\'lint ran\')"',
+        typecheck_command=f'"{sys.executable}" -c "print(\'typecheck ran\')"',
+    )
+    assert results["visible-tests"].exit_code == exit_code
+    assert results["visible-tests"].outcome == ("pass" if exit_code == 0 else "fail")
+    assert results["lint"].stdout.strip() == "lint ran"
+    assert results["typecheck"].stdout.strip() == "typecheck ran"
+    assert source.read_bytes() == before
+
+
+@pytest.mark.parametrize("command", ["", "   ", '"unclosed'])
+def test_verify_rejects_invalid_commands_before_running_any_check(
+    tmp_path, monkeypatch, command
+):
+    def forbidden(*args, **kwargs):
+        pytest.fail("All commands must be validated before execution")
+
+    monkeypatch.setattr(api, "run_command", forbidden)
+    with pytest.raises(ValueError):
+        api.verify(tmp_path, "python -V", lint_command=command)
+
+
+@pytest.mark.parametrize("timeout", [0, -1, float("nan"), float("inf")])
+def test_verify_rejects_invalid_timeouts(tmp_path, timeout):
+    with pytest.raises(ValueError, match="positive and finite"):
+        api.verify(tmp_path, "python -V", timeout_seconds=timeout)
+
+
+@pytest.mark.parametrize(
+    ("script", "expected_exit", "outcome"),
+    [
+        ("raise SystemExit(0)", 0, "pass"),
+        ("raise SystemExit(1)", 1, "fail"),
+        ("import time; time.sleep(10)", 2, "timeout"),
+        (None, 2, "error"),
+    ],
+)
+def test_cli_verify_persists_outcomes_without_paid_repair(
+    tmp_path, monkeypatch, capsys, forbid_repairs, script, expected_exit, outcome
+):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    if script is not None:
+        (repo / "check.py").write_text(script, encoding="utf-8")
+        command = f'"{sys.executable}" check.py'
+    else:
+        command = f'"{repo / "missing-executable.exe"}"'
+    output = tmp_path / "verification.json"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "verify-and-repair",
+            "verify",
+            "--repo",
+            str(repo),
+            "--working-tests",
+            command,
+            "--timeout-seconds",
+            "0.05" if outcome == "timeout" else "10",
+            "--output",
+            str(output),
+        ],
+    )
+    if expected_exit:
+        with pytest.raises(SystemExit) as error:
+            cli.main()
+        assert error.value.code == expected_exit
+    else:
+        cli.main()
+    report = json.loads(capsys.readouterr().out)
+    assert report == json.loads(output.read_text(encoding="utf-8"))
+    assert report["verified"] is (outcome == "pass")
+    assert report["checks"]["visible-tests"]["outcome"] == outcome
+
+
+@pytest.mark.parametrize("existing_output", [False, True])
+def test_cli_verify_rejects_unsafe_output_before_running_checks(
+    tmp_path, monkeypatch, existing_output
+):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    output = tmp_path / "existing.json" if existing_output else repo / "new.json"
+    if existing_output:
+        output.write_text("preserve this", encoding="utf-8")
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Invalid output must fail before executing checks")
+
+    monkeypatch.setattr(cli, "verify", forbidden)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "verify-and-repair",
+            "verify",
+            "--repo",
+            str(repo),
+            "--working-tests",
+            "python -V",
+            "--output",
+            str(output),
+        ],
+    )
+    with pytest.raises(SystemExit) as error:
+        cli.main()
+    assert error.value.code == 2
+    if existing_output:
+        assert output.read_text(encoding="utf-8") == "preserve this"
+    else:
+        assert not output.exists()

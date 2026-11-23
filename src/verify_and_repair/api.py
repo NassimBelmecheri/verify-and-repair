@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from .backends import BACKENDS
 from .contracts import contained_file
+from .execution import CommandResult, run_command, split_command
 from .hybrid_controller import HybridController
 from .models import Budget, RunRecord
 from .patching import _unique_json_object
@@ -142,6 +144,35 @@ class TaskConfig:
         for name in (*config.implementation_files, *config.context_files):
             contained_file(config.repo, name)
         return config
+
+
+def verify(
+    repo: Path,
+    working_tests: str,
+    *,
+    lint_command: str | None = None,
+    typecheck_command: str | None = None,
+    timeout_seconds: float = 180,
+) -> dict[str, CommandResult]:
+    """Run project checks without constructing a repair controller or calling a model."""
+    repo = repo.resolve()
+    if not repo.is_dir():
+        raise ValueError("The project directory must exist")
+    if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+        raise ValueError("Check timeout must be positive and finite")
+    commands = {"visible-tests": working_tests}
+    if lint_command is not None:
+        commands["lint"] = lint_command
+    if typecheck_command is not None:
+        commands["typecheck"] = typecheck_command
+    arguments = {name: split_command(command) for name, command in commands.items()}
+    for name, argv in arguments.items():
+        if not argv:
+            raise ValueError(f"Empty check command: {name}")
+    return {
+        name: run_command(argv, repo, timeout_seconds, use_current_python=False)
+        for name, argv in arguments.items()
+    }
 
 
 def solve(

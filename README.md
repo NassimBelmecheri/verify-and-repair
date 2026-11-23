@@ -266,27 +266,63 @@ Then invoke it in chat:
 /install-verify-and-repair
 ```
 
-The skill asks for your installation directory, task repository, editable
-Python files, public test command and backend. With your approval, it installs
-the controller, saves the task config and copies the optional VS Code agent
-into your workspace with the local paths filled in. It preserves existing
-files and **does not run a paid repair**. CLI installation/authentication stays
-under your control. The outer setup conversation can still consume model quota.
+The skill asks for your installation directory, target workspace and backend.
+With your approval, it installs the controller and copies the optional VS Code
+agent into your workspace with the local paths filled in. Repair configuration
+can be deferred until a task needs it; normal coding and checks-only verification
+do not need an editable-file allowlist. It preserves existing files and **does
+not run a paid repair**. CLI installation/authentication stays under your
+control. The outer setup conversation can still consume model quota.
 
 The skill is manually invoked; it does not install global always-run rules.
-After setup, select **Verify and Repair** in VS Code. Questions stay normal;
-explicit code-change requests use the configured controller with quota approval.
-You can also follow the manual steps below.
+After setup, select **Verify and Repair** in VS Code. It works as a normal agent,
+including creating files, and invokes verification when running code checks.
+Paid repair requires separate approval after a failure.
 
-### Use in VS Code: questions stay normal, code requests use the controller
+### Run checks without a paid repair
+
+`verify` runs the specified project commands without invoking a coding CLI or
+automatically repairing failures. It needs neither a task configuration nor an
+implementation allowlist, and can check new files and non-Python projects.
+Unlike `solve`, it does not require a Git repository.
+
+From the installed controller directory, with the task's environment active:
+
+```powershell
+.\verify-and-repair.ps1 verify --repo C:\work\project `
+  --working-tests "python -m pytest -q tests"
+```
+
+Choose the actual test command and working directory for your project.
+`--lint-command` and `--typecheck-command` optionally add checks; a build command
+can also be supplied as the primary check. All requested checks run, including
+after a failure. `--timeout-seconds` defaults to 180 **per command**.
+
+Verification preserves the caller's PATH and environment. It does not substitute
+the controller's Python for the task's Python. Activate the task environment or
+use an absolute interpreter path. Each command runs without an implicit shell;
+for shell operators, use an explicit, reviewed shell invocation.
+
+Exit codes are **0** when every check passes, **1** for failed checks, and **2**
+for invalid input, execution errors or timeouts. JSON includes each command's
+outcome and output and is saved beside the project in `verify-and-repair-results`.
+An optional `--output` must be outside the project and must not already exist.
+Keep artifacts private: check output may contain project data.
+
+The verifier itself does not edit source or call a model, but supplied commands
+can have side effects or call remote services. Review and authorize those commands.
+It does not run private grading or claim hidden correctness.
+
+### Use in VS Code: normal agent work, verification when testing
 
 The optional [Verify and Repair custom agent](.github/agents/verify-and-repair.agent.md)
-routes **explicit requests to create or change code** to the controller.
-Questions, explanations, reviews, plans and example snippets in chat do not
-start a repair. Keep this agent selected to use that split; other agents are
-unchanged.
+uses normal tools for implementation, new files, tests, other languages,
+documentation and authorized repository operations. It runs `verify` only at
+the code-testing stage or for an explicit request to run code checks.
+Questions, explanations, reviews, plans, example snippets and non-coding work
+do not start verification or repair. Other agents are unchanged.
 
-1. Complete setup and create a task configuration as above.
+1. Complete setup. A repair task configuration is optional until a repair is approved.
 2. Copy `.github\agents\verify-and-repair.agent.md` from this repository into
    your task workspace's `.github\agents` directory. Do this before starting a
    repair so the new file is part of the controller's initial workspace state.
@@ -294,30 +330,33 @@ unchanged.
    If it is not listed, use **Chat: Open Customizations** to inspect workspace
    agents. Follow the [VS Code custom-agent guide](https://code.visualstudio.com/docs/agent-customization/custom-agents)
    for your installed version and selected harness.
-4. Tell it the absolute paths to the installed `verify-and-repair.ps1` and your
-   task JSON. Authorize the model-quota use when you request a repair.
+4. Tell it the installed launcher's absolute path. It selects the current
+   workspace and its relevant check commands, asking when they are unclear.
 
 For example:
 
 ```text
 Controller: C:\tools\verify-and-repair\verify-and-repair.ps1
-Config: C:\work\project\verify-and-repair.json
-
-When I ask a question, answer it without running repairs.
-When I explicitly ask for an implementation change, use this controller.
-Ask before using paid model quota.
+Create and edit files using your normal tools.
+Use checks-only verification when testing code, not for questions or other work.
+If checks fail, ask before launching paid controller repair.
 ```
 
-Then “Explain why this assertion fails” is a normal question, while “Fix this
-boundary case using the controller” starts the configured repair workflow.
-There is **no need to activate it for every question**.
+Then "Explain why this assertion fails" is a normal question, "Create a module
+and test it" uses normal editing followed by `verify`, and "Run the tests" runs
+`verify` without requiring an edit first. No repair starts automatically when
+checks fail. Environment errors and timeouts are diagnosed as check setup issues.
 
 This is instruction-based routing, **not an enforced code-generation or
 file-save hook**. A custom agent does not guarantee that every generated edit
 passes through the controller. It applies only when selected, and normal
 folder trust, terminal permissions and managed policies still apply.
-The controller currently changes existing Python files only; new projects,
-new files and other languages require a different workflow.
+Only the optional paid `solve` loop is restricted to allowlisted existing
+Python implementation files in Git. The normal agent can create those files
+first and, with approval, include them in a later repair configuration.
+The repair loop still protects tests and other non-allowlisted files.
+Use an explicit project interpreter in repair test commands: unlike `verify`,
+`solve` resolves bare `python` to its own environment.
 
 VS Code remains the outer conversation. The selected CLI performs the inner
 repair; outer chat requests are not included in the controller's usage totals.

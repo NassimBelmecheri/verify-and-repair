@@ -41,17 +41,17 @@ def run_command(
     timeout: float,
     *,
     env: dict[str, str | None] | None = None,
+    use_current_python: bool = True,
 ) -> CommandResult:
     argv = split_command(command) if isinstance(command, str) else command
-    if argv and argv[0].lower() in {"python", "python.exe"}:
+    if use_current_python and argv and argv[0].lower() in {"python", "python.exe"}:
         argv = [sys.executable, *argv[1:]]
     start = time.perf_counter()
-    environment = {
-        **os.environ,
-        "PATH": str(Path(sys.executable).parent)
-        + os.pathsep
-        + os.environ.get("PATH", ""),
-    }
+    environment = dict(os.environ)
+    if use_current_python:
+        environment["PATH"] = (
+            str(Path(sys.executable).parent) + os.pathsep + os.environ.get("PATH", "")
+        )
     for key, value in (env or {}).items():
         if value is None:
             environment.pop(key, None)

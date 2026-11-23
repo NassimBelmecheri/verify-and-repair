@@ -1,3 +1,4 @@
+import os
 import sys
 
 from verify_and_repair.execution import run_command, split_command
@@ -19,6 +20,23 @@ def test_python_command_uses_current_environment(tmp_path):
     result = run_command('python -c "import sys; print(sys.executable)"', tmp_path, 10)
     assert result.outcome == "pass"
     assert result.stdout.strip() == sys.executable
+
+
+def test_project_checks_preserve_the_callers_python_and_path(tmp_path, monkeypatch):
+    from verify_and_repair import execution
+
+    path = os.environ["PATH"]
+    monkeypatch.setattr(
+        execution.sys, "executable", str(tmp_path / "missing-python.exe")
+    )
+    result = run_command(
+        "python -c \"import os; print(os.environ['PATH'])\"",
+        tmp_path,
+        10,
+        use_current_python=False,
+    )
+    assert result.outcome == "pass"
+    assert result.stdout.strip() == path
 
 
 def test_child_environment_removes_inherited_approval_without_mutating_parent(
