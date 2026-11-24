@@ -36,10 +36,17 @@ Your agent generates code
         -> verify again until pass, unchanged evidence, or budget exhaustion
 ```
 
-The server exposes `begin_repair_task` and `verify_code`. It runs configured
+The server runs configured
 public tests, lint or typechecks, protects declared test/config files and
-persists the loop's budget across restarts. It does not call a model or edit
-source. Your harness retains its normal permissions and model accounting.
+persists the loop's budget across restarts. It never calls a model; source edits
+require an explicit focused-edit tool call. Your harness retains its normal
+permissions and model accounting.
+
+Repair feedback now includes **bounded source context and file hashes**.
+`apply_focused_edit` applies a validated exact-anchor edit instead of a full-file
+rewrite. Import host usage receipts to measure tokens and **cost per accepted
+task**, including generation and failed attempts.
+[Token-efficiency guide](docs/token-efficiency.md).
 
 For the source-first child-controller workflow, see
 [Copilot CLI / Agency setup](docs/setup.md). Its `solve` loop changes only

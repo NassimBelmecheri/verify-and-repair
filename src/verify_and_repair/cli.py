@@ -44,6 +44,22 @@ def main() -> None:
     mcp.add_argument("--config", type=Path, required=True)
     mcp.add_argument("--state-dir", type=Path)
 
+    accounting = commands.add_parser(
+        "account", help="Import normalized host usage receipts; no model calls"
+    )
+    accounting.add_argument("--config", type=Path, required=True)
+    accounting.add_argument("--session-id", required=True)
+    accounting.add_argument("--receipts", type=Path, required=True)
+    accounting.add_argument("--state-dir", type=Path)
+    accounting.add_argument("--task-complete", action="store_true")
+    accounting.add_argument("--accepted", choices=("yes", "no"))
+
+    account_report = commands.add_parser(
+        "account-report", help="Summarize imported usage and cost per accepted task"
+    )
+    account_report.add_argument("--config", type=Path, required=True)
+    account_report.add_argument("--state-dir", type=Path)
+
     repair = commands.add_parser(
         "solve", help="Lean repair with automatic tools fallback; public checks only"
     )
@@ -56,6 +72,26 @@ def main() -> None:
     repair.add_argument("--agency-exe")
     repair.add_argument("--output", type=Path)
     args = parser.parse_args()
+
+    if args.cmd in {"account", "account-report"}:
+        from .harness import HarnessConfig, HarnessSessions
+
+        try:
+            sessions = HarnessSessions(HarnessConfig.load(args.config), args.state_dir)
+            report = (
+                sessions.usage_report()
+                if args.cmd == "account-report"
+                else sessions.import_usage(
+                    args.session_id,
+                    args.receipts,
+                    task_complete=args.task_complete,
+                    accepted=None if args.accepted is None else args.accepted == "yes",
+                )
+            )
+        except (ValueError, OSError, TypeError) as error:
+            parser.error(str(error))
+        print(json.dumps(report, indent=2))
+        return
 
     if args.cmd == "mcp":
         from .mcp_server import serve

@@ -547,15 +547,21 @@ the repair. Unsupported repair tasks can instead use normal agent work with
 the user's agreement; they are not a reason to forbid ordinary file creation.
 
 \paragraph{Scope of the guarantee.}
-The same-agent MCP interface exposes \texttt{begin\_repair\_task} and
-\texttt{verify\_code}. A Codex, Claude Code, Cursor or other local tool-aware
+The same-agent MCP interface exposes \texttt{begin\_repair\_task},
+\texttt{verify\_code} and \texttt{apply\_focused\_edit}. A Codex, Claude Code, Cursor or other local tool-aware
 harness generates code normally, receives public counterexamples and repairs
 with its own model. The feedback server preserves evidence deltas, repeated
 evidence suppression, declared public-file protection and per-session
 wall/verifier-time and repair-round budgets across restarts. It never launches
 a child coding model. Repair-round counts are not native model request counts;
-the host owns its model accounting and permissions. This integration was not
-evaluated in the historical benchmark.
+the host owns its model accounting and permissions. Bounded public source
+excerpts include file hashes, relevant Python symbols and local dependencies.
+Focused edits require a unique exact anchor and matching file hash; Python
+replacements must parse before application. Explicit local usage-receipt
+imports account for initial generation, repair and review, without treating
+missing counts as zero. Completeness is user-attested, not independently
+observed by the feedback server. These extensions were not evaluated in the
+historical benchmark and do not establish token savings.
 
 The separation inside \texttt{verify} is implemented in code.
 Algorithm~\ref{alg:normal-agent}, by contrast, describes the custom agent's

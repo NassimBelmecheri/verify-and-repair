@@ -127,6 +127,13 @@ Add project instructions with approval: generate normally; call
 `verify_code`; repair from counterexamples using the same model and session ID
 on `next_action=repair`; stop on `done` or `stop`. Questions and tests-only
 requests do not authorize repairs. Do not reset budgets with a new session.
+Use bounded `repair_context` excerpts and prefer `apply_focused_edit` with the
+current file hash and a unique old/new anchor over full-file rewrites. Read
+only specifically missing public context. Optional `context_files` are
+read-only; `max_context_bytes` defaults to 12000. For later accounting, explain
+the CLI's `account` and `account-report` commands: import actual host usage
+receipts for generation, repair and reviews; never ask a model to estimate
+its tokens or label missing usage as zero.
 Use `AGENTS.md` for Codex, `CLAUDE.md` for Claude Code, or a scoped Cursor rule.
 Do not invoke a repair or verification session during installation.
 Continue to section 5 without copying the child-controller agent.

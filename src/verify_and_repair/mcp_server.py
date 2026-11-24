@@ -19,7 +19,8 @@ def serve(config_path: Path, state_dir: Path | None = None):
         instructions=(
             "Generate code with your own model. For an authorized implementation task, "
             "call begin_repair_task once, then verify_code. On next_action=repair, "
-            "make a minimal edit from its counterexamples and verify again with the same ID. "
+            "use its bounded repair_context and apply_focused_edit for a minimal anchored replacement, "
+            "then verify again with the same ID. Read specific missing context only when necessary. "
             "On done or stop, end the loop. Questions and tests-only requests do not authorize repairs. "
             "Do not reset an exhausted session without renewed task authorization. "
             "No child coding CLI is launched; your host owns model accounting and permissions."
@@ -35,5 +36,12 @@ def serve(config_path: Path, state_dir: Path | None = None):
     def verify_code(session_id: str) -> dict:
         """Run configured public checks; return counterexamples, evidence delta and repair/done/stop."""
         return sessions.verify(session_id)
+
+    @server.tool()
+    def apply_focused_edit(
+        session_id: str, file: str, sha256: str, old: str, new: str
+    ) -> dict:
+        """Apply one unique exact-anchor replacement to an allowlisted file at its expected hash; Python edits must parse."""
+        return sessions.apply_edit(session_id, file, sha256, old, new)
 
     server.run(transport="stdio")

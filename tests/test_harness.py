@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import os
 import sys
@@ -175,6 +176,77 @@ def test_active_or_interrupted_lock_stops_without_stealing_it(config, monkeypatc
     assert not calls
 
 
+@pytest.mark.parametrize(
+    "problem", ["stale", "ambiguous", "scope", "protected", "syntax", "expired"]
+)
+def test_focused_edit_rejects_unsafe_changes_without_modifying_source(
+    config, monkeypatch, problem
+):
+    source = config.repo / "logic.py"
+    source.write_text("def inc(x):\n    return x - 1\n\n# return x - 1\n")
+    config = replace(config, implementation_files=("logic.py",))
+    fake_checks(monkeypatch, [("fail", "assert inc(0) == 1")])
+    sessions = harness.HarnessSessions(config)
+    session_id = sessions.begin("Repair")["session_id"]
+    sessions.verify(session_id)
+    before = source.read_bytes()
+    digest = hashlib.sha256(before).hexdigest()
+    file = "logic.py"
+    old, new = "    return x - 1\n", "    return x + 1\n"
+    if problem == "stale":
+        digest = "0" * 64
+    elif problem == "ambiguous":
+        old, new = "return x - 1", "return x + 1"
+    elif problem == "scope":
+        file = "public-check.py"
+    elif problem == "protected":
+        (config.repo / "public-check.py").write_text("changed")
+    elif problem == "syntax":
+        new = "    return (\n"
+    elif problem == "expired":
+        state = sessions._load(sessions._path(session_id))
+        state["started_at"] -= 601
+        sessions._save(sessions._path(session_id), state)
+    with pytest.raises((ValueError, SyntaxError)):
+        sessions.apply_edit(session_id, file, digest, old, new)
+    assert source.read_bytes() == before
+    assert not list(config.repo.glob(".vr-edit-*"))
+
+
+def test_focused_edit_requires_actual_failed_check_not_just_a_new_session(config):
+    sessions = harness.HarnessSessions(config)
+    session_id = sessions.begin("Repair")["session_id"]
+    with pytest.raises(ValueError, match="pending repair"):
+        sessions.apply_edit(session_id, "logic.js", "0" * 64, "value = 1", "value = 2")
+
+
+def test_context_files_are_protected_and_old_session_defaults_remain_compatible(
+    config, monkeypatch
+):
+    fake_checks(monkeypatch, [("fail", "assert value == 2")])
+    sessions = harness.HarnessSessions(config)
+    session_id = sessions.begin("Repair")["session_id"]
+    path = sessions._path(session_id)
+    state = sessions._load(path)
+    del state["config"]["context_files"], state["config"]["max_context_bytes"]
+    sessions._save(path, state)
+    assert sessions.verify(session_id)["next_action"] == "repair"
+    with pytest.raises(ValueError, match="Protected"):
+        harness.HarnessSessions(replace(config, context_files=("logic.js",)))
+
+
+def test_read_only_context_is_protected_even_when_not_in_protected_files(
+    config, monkeypatch
+):
+    calls = fake_checks(monkeypatch, [])
+    (config.repo / "types.py").write_text("Money = int\n")
+    sessions = harness.HarnessSessions(replace(config, context_files=("types.py",)))
+    session_id = sessions.begin("Repair")["session_id"]
+    (config.repo / "types.py").write_text("Money = str\n")
+    assert sessions.verify(session_id)["next_action"] == "stop"
+    assert not calls
+
+
 def test_real_stdio_mcp_roundtrip_repairs_with_the_hosts_edit(tmp_path):
     pytest.importorskip("mcp")
     from mcp import ClientSession, StdioServerParameters
@@ -214,6 +286,7 @@ def test_real_stdio_mcp_roundtrip_repairs_with_the_hosts_edit(tmp_path):
             assert {tool.name for tool in tools.tools} == {
                 "begin_repair_task",
                 "verify_code",
+                "apply_focused_edit",
             }
             started = await session.call_tool(
                 "begin_repair_task", {"task": "Repair generated inc"}
@@ -224,7 +297,19 @@ def test_real_stdio_mcp_roundtrip_repairs_with_the_hosts_edit(tmp_path):
             feedback = json.loads(failed.content[0].text)
             assert feedback["next_action"] == "repair", feedback
             assert "inc(0) == 1" in feedback["counterexamples"][0]["detail"]
-            source.write_text("def inc(x):\n    return x + 1\n")
+            snippet = feedback["repair_context"]["snippets"][0]
+            assert snippet["path"] == "logic.py"
+            applied = await session.call_tool(
+                "apply_focused_edit",
+                {
+                    "session_id": session_id,
+                    "file": "logic.py",
+                    "sha256": snippet["sha256"],
+                    "old": "return x - 1",
+                    "new": "return x + 1",
+                },
+            )
+            assert json.loads(applied.content[0].text)["applied"]
             passed = await session.call_tool("verify_code", {"session_id": session_id})
             assert json.loads(passed.content[0].text)["verified"]
 
