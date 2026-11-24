@@ -467,9 +467,7 @@ integrity checks, not an OS sandbox; managed policy and hooks still apply.
 
 ## Paper
 
-Read [the paper (PDF)](docs/verify-and-repair-paper.pdf). It includes simple
-notation, algorithm2e algorithms, diagrams, worked examples, the concrete execution
-and limitations.
+Read [the paper (PDF)](docs/verify-and-repair-paper.pdf).
 
 ## Development
 
