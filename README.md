@@ -277,7 +277,9 @@ control. The outer setup conversation can still consume model quota.
 The skill is manually invoked; it does not install global always-run rules.
 After setup, select **Verify and Repair** in VS Code. It works as a normal agent,
 including creating files, and invokes verification when running code checks.
-Paid repair requires separate approval after a failure.
+Authorize the repair scope and budget once for an implementation task.
+Failed checks then trigger counterexample-driven repair automatically within
+that budget, without asking again for each attempt.
 
 ### Run checks without a paid repair
 
@@ -313,7 +315,7 @@ The verifier itself does not edit source or call a model, but supplied commands
 can have side effects or call remote services. Review and authorize those commands.
 It does not run private grading or claim hidden correctness.
 
-### Use in VS Code: normal agent work, verification when testing
+### Use in VS Code: generate normally, repair from counterexamples
 
 The optional [Verify and Repair custom agent](.github/agents/verify-and-repair.agent.md)
 uses normal tools for implementation, new files, tests, other languages,
@@ -322,7 +324,9 @@ the code-testing stage or for an explicit request to run code checks.
 Questions, explanations, reviews, plans, example snippets and non-coding work
 do not start verification or repair. Other agents are unchanged.
 
-1. Complete setup. A repair task configuration is optional until a repair is approved.
+1. Complete setup. Before testing implementation work, agree on the task's
+   repair configuration and bounded model budget once. Configuration can wait
+   until newly generated implementation files exist.
 2. Copy `.github\agents\verify-and-repair.agent.md` from this repository into
    your task workspace's `.github\agents` directory. Do this before starting a
    repair so the new file is part of the controller's initial workspace state.
@@ -339,13 +343,20 @@ For example:
 Controller: C:\tools\verify-and-repair\verify-and-repair.ps1
 Create and edit files using your normal tools.
 Use checks-only verification when testing code, not for questions or other work.
-If checks fail, ask before launching paid controller repair.
+For this implementation task, agree on the repair scope and budget once.
+If checks fail, automatically repair using their counterexamples within that budget.
 ```
 
 Then "Explain why this assertion fails" is a normal question, "Create a module
 and test it" uses normal editing followed by `verify`, and "Run the tests" runs
-`verify` without requiring an edit first. No repair starts automatically when
-checks fail. Environment errors and timeouts are diagnosed as check setup issues.
+`verify` without requiring an edit first. An explicitly tests-only request does
+not authorize repairs. For authorized implementation work, failed checks
+automatically enter `solve` on the generated code. The controller reruns public
+checks, sends actual failing assertions and diagnostics to the model, rechecks
+each repair, and sends compact evidence deltas on later attempts. Unchanged
+evidence is suppressed per repair capability; budget exhaustion or a stalled
+run does not automatically start a fresh budget. Environment errors and timeouts
+are diagnosed as check setup issues, not repaired speculatively.
 
 This is instruction-based routing, **not an enforced code-generation or
 file-save hook**. A custom agent does not guarantee that every generated edit

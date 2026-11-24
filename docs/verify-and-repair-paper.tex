@@ -52,8 +52,9 @@ efficiency--accuracy tradeoff, not evidence that lean wins on every metric.
 We explain the method with short algorithms and worked examples, describe
 Agency and Copilot CLI support, and report a genuine runnable repair.
 An optional normal-agent integration adds file creation and other ordinary
-work, invoking checks-only verification at the testing stage and asking
-before paid repair. This later extension was not part of the benchmark.
+work, invoking verification at the testing stage and automatically repairing
+failed checks from counterexamples within a task's approved budget.
+This later extension was not part of the benchmark.
 Important limits include weak public checks on 98 tasks, staged private
 grading and a single-model benchmark campaign.
 \end{abstract}
@@ -81,8 +82,9 @@ CLI. The user selects a CLI, not a different repair algorithm.
 
 The interactive integration keeps a separate boundary: ordinary agent work
 can create files and use normal tools, while the \texttt{verify} command runs
-chosen code checks without starting a repair. Only an approved subsequent
-\texttt{solve} invocation enters the lean loop
+chosen code checks without itself starting a repair. After task-specific scope
+and budget approval, failed implementation checks automatically enter the lean
+\texttt{solve} loop using the generated code and public counterexamples
 (Section~\ref{sec:normal-agent}). This broadens the workflow, not the set of
 files that a paid lean repair may modify.
 
@@ -90,8 +92,8 @@ files that a paid lean repair may modify.
 We provide (1) a bounded source-first repair algorithm, (2) a clear rule for
 when to retry or escalate, (3) a complete task-coverage comparison with native
 usage accounting, (4) examples that connect the algorithm to an actual
-execution, and (5) a normal-agent integration that separates code checking
-from paid repair. The fifth contribution is an implementation extension,
+execution, and (5) a normal-agent integration that automatically routes failed
+implementation checks to budgeted counterexample repair. The fifth contribution is an implementation extension,
 not an experimentally evaluated source of the reported savings.
 We do not claim a new general program synthesizer, a universal
 correctness proof or a full Copilot benchmark.
@@ -438,10 +440,12 @@ different checkout remembered from an earlier task.
 In VS Code, the user selects the custom agent explicitly~\cite{vscode-agents}.
 It can be installed at workspace or user scope; the setup skill can defer
 repair configuration until needed. Other agents are unaffected.
-The distinction is between \emph{ordinary work}, \emph{checking code} and
-\emph{requesting a paid repair}, rather than treating every code-related
-message as a repair request. Table~\ref{tab:normal-routing} summarizes the
-testing-stage policy.
+Ordinary work and checking code remain distinct. Before testing an implementation
+task, the user authorizes its repair scope and bounded child-model budget once.
+Failed checks then trigger counterexample-driven repair without another prompt
+for each attempt inside that budget. A code-related question or tests-only
+request does not authorize paid repair. Table~\ref{tab:normal-routing}
+summarizes the testing-stage policy.
 
 \begin{table}[t]
 \centering\small
@@ -453,7 +457,7 @@ Explain, review or plan & Answer normally; do not run checks merely because code
 Create or edit files & Use normal tools; verify when reaching the code-testing stage.\\
 Run code checks & Invoke checks-only \texttt{verify}, even without a preceding edit.\\
 Non-coding work & Use normal tools; no automatic verification.\\
-Code-check failure & Report it and ask before paid \texttt{solve}.\\
+Code-check failure & Automatically enter counterexample-driven \texttt{solve} within the task's approved budget.\\
 Timeout or setup error & Diagnose the check setup, not a speculative code repair.\\
 \bottomrule
 \end{tabular}
@@ -493,7 +497,7 @@ artifact is saved outside the project; an explicitly supplied output path
 must not already exist. No private evaluator is run, and success means only
 that the selected checks passed.
 
-\subsection{Testing-stage routing and paid-repair approval}
+\subsection{Testing-stage routing and budgeted counterexample repair}
 The agent invokes \texttt{verify} only when actually running code checks
 during implementation or in response to an explicit testing request.
 A question about tests does not execute them. There is no verification on
@@ -506,6 +510,7 @@ run checks is respected.
 \label{alg:normal-agent}
 \KwIn{User task, current workspace and project instructions}
 \KwOut{Normal work, check results and any approved repair result}
+Agree once on the implementation task's repair scope and bounded budget\;
 Perform the requested ordinary work with normal tools\;
 \If{the task is not at a requested code-checking step}{
   \Return without invoking verification or repair\;
@@ -518,19 +523,24 @@ Run \texttt{verify}; record the actual check outcomes\;
 \If{all selected checks pass}{
   \Return the limited public-check success result\;
 }
-Report code-check failures and ask for paid-repair approval\;
-\If{approval is absent or the task is unsupported by \texttt{solve}}{
+Record the public counterexamples from failed code checks\;
+\If{task approval is absent or the task is unsupported by \texttt{solve}}{
   \Return without a paid repair; agree on any further normal work\;
 }
-Agree on exact existing Python files, public context and repair checks\;
-Run the bounded lean repair (Algorithm~\ref{alg:lean})\;
-Report its result; ask before another paid attempt\;
+Automatically run bounded lean repair on the generated code (Algorithm~\ref{alg:lean})\;
+Recheck each repair and supply resolved, remaining and new counterexample evidence\;
+Report its result; do not reset a stalled or exhausted budget without renewed approval\;
 \end{algorithm}
 
-The checks-only command never automatically escalates into \texttt{solve}.
-After an observed code-check failure, the selected agent asks before spending
-child CLI quota. A paid repair still requires an existing Git repository and
-an exact allowlist of eligible existing Python implementation files.
+The standalone checks-only command never itself escalates into \texttt{solve}.
+The selected agent automatically invokes \texttt{solve} after failed
+implementation checks under the task's existing approval. The controller reruns
+public checks and supplies actual failing assertions and diagnostics, rather
+than a generic request to try again. It sends compact evidence deltas after
+each repair and suppresses repeated evidence per capability. No private
+evaluator evidence is supplied to repair.
+A paid repair still requires an existing Git repository and an exact allowlist
+of eligible existing Python implementation files.
 Files created during ordinary coding can be included once they exist.
 Tests, configuration and other non-allowlisted files remain protected during
 the repair. Unsupported repair tasks can instead use normal agent work with
@@ -735,7 +745,8 @@ choice with explicit limits, rather than a claim that lean is best at
 everything.
 The normal-agent integration adds flexible file creation and ordinary tools
 without relaxing the paid repair's allowlist. Checks-only verification is
-invoked at testing checkpoints; paid repair remains a separate, approved step.
+invoked at testing checkpoints; failed implementation checks automatically
+enter counterexample-driven repair within a task's approved budget.
 This is a usability extension, not additional evidence for the measured savings.
 
 \section*{Artifacts and Reproduction}

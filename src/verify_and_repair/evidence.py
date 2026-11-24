@@ -56,6 +56,35 @@ def failures(events: list[Event], repo: str = "") -> Snapshot:
             continue
         text = event.stdout_tail + "\n" + event.stderr_tail
         pytest_failures = re.findall(r"^(?:FAILED|ERROR) .+$", text, re.MULTILINE)
+        if pytest_failures:
+            headings = list(re.finditer(r"^_{3,} +(.+?) +_{3,} *$", text, re.MULTILINE))
+            used_headings = set()
+            for index, diagnostic in enumerate(pytest_failures):
+                node = diagnostic.split(" - ", 1)[0].split(" ", 1)[1]
+                test_name = ".".join(node.split("::")[1:])
+                for position, heading in enumerate(headings):
+                    if position in used_headings:
+                        continue
+                    if not (
+                        heading[1] == test_name
+                        or heading[1] == node.split("::")[-1]
+                        or heading[1].endswith(" of " + test_name)
+                    ):
+                        continue
+                    end = (
+                        headings[position + 1].start()
+                        if position + 1 < len(headings)
+                        else len(text)
+                    )
+                    counterexample = re.findall(
+                        r"^[ \t]*(?:> +|E +).+$",
+                        text[heading.end() : end],
+                        re.MULTILINE,
+                    )
+                    if counterexample:
+                        pytest_failures[index] += "\n" + "\n".join(counterexample)
+                    used_headings.add(position)
+                    break
         type_errors = re.findall(r"^.+:\d+(?::\d+)?: error: .+$", text, re.MULTILINE)
         lint_errors = re.findall(
             r"^(?:.+:\d+:\d+: [A-Z]+\d+ .+|[A-Z]+\d+ (?:\[\*\] )?.+(?:\n\s*--> .+)?)$",

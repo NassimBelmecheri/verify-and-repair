@@ -1,6 +1,6 @@
 ---
 name: install-verify-and-repair
-description: Install Verify and Repair and its optional normal-workflow VS Code agent. Use only when the user explicitly requests installation or setup.
+description: Install Verify and Repair with normal code generation and budgeted automatic counterexample repair. Use only when the user explicitly requests installation or setup.
 disable-model-invocation: true
 ---
 
@@ -25,6 +25,7 @@ but do not invent a test command or silently expand editable paths:
   with an explicit project interpreter.
 - Backend: Copilot CLI or Agency; optionally an explicit native executable path.
 - A model accessible to that account, or the default gpt-6.1-sol.
+- The repair budget limits to present for task-specific approval before testing.
 
 Explain that installation downloads code and installs Python dependencies.
 Running repairs later consumes model quota; installation runs no paid inference.
@@ -97,7 +98,8 @@ Append an `## Local installation` section to the newly copied agent containing:
 - The absolute controller launcher path.
 - The absolute task-configuration path, or null if deferred.
 - The selected backend.
-- A reminder to ask before spending paid model quota.
+- A reminder to authorize repair scope and budget once per implementation task;
+  failures then trigger automatic counterexample repair within that budget.
 
 Render configured paths as JSON string values in a fenced JSON block, using a JSON
 serializer to escape backslashes and quotes correctly. Do not include credentials.
@@ -117,15 +119,18 @@ Without running project checks, `solve` or the paid demo:
    reused, load it through `verify_and_repair.api.TaskConfig.load`, using the
    installed controller's `.venv\Scripts\python.exe`.
 3. Check that the copied agent permits normal work and file creation, invokes
-   verification only when running code checks, requires approval for paid
-   repair after failures, and contains the correct local paths.
+   verification only when running code checks, automatically repairs failures
+   within a task's approved budget, and contains the correct local paths.
 4. Report exactly which local files were created or reused.
 
 Tell the user to open the target workspace in VS Code and select
 **Verify and Repair** in Copilot Chat. This selection is manual. Normal agent
 work includes creating files and using other tools. Questions and non-coding
 tasks do not invoke verification. When running code checks, the agent uses
-checks-only `verify`; failures need separate approval before paid `solve`.
+checks-only `verify`; failed implementation checks automatically enter
+counterexample-driven `solve` after the task's scope and budget are authorized
+once. Installation is not blanket approval for future paid tasks. Tests-only
+requests do not authorize repairs, and budget exhaustion needs renewed approval.
 This is instruction-based routing, not an automatic file-save hook. Other agents
 are unaffected.
 

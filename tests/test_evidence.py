@@ -85,3 +85,42 @@ def test_structured_evidence_uses_canonical_key_order():
     before.metadata["structured_evidence"] = {"x": 1, "y": 2}
     after.metadata["structured_evidence"] = {"y": 2, "x": 1}
     assert failures([before]) == failures([after])
+
+
+def test_pytest_counterexamples_remain_attached_to_their_own_failure():
+    detail = (
+        "____ test_a ____\n"
+        ">       assert inc(0) == 1\n"
+        "E       assert -1 == 1\n"
+        "____ test_b ____\n"
+        ">       assert double(2) == 4\n"
+        "E       assert 2 == 4\n"
+        "FAILED tests/test_x.py::test_a - AssertionError\n"
+        "FAILED tests/test_x.py::test_b - AssertionError\n"
+    )
+    snapshot = failures([event("pytest", detail)])
+    first = next(f for f in snapshot if "test_a" in f.detail)
+    second = next(f for f in snapshot if "test_b" in f.detail)
+    assert "inc(0) == 1" in first.detail and "assert -1 == 1" in first.detail
+    assert "double(2)" not in first.detail
+    assert "double(2) == 4" in second.detail and "assert 2 == 4" in second.detail
+    assert "inc(0)" not in second.detail
+    assert failures([event("pytest", detail.replace("-1 == 1", "0 == 1"))]) != snapshot
+
+
+def test_pytest_repeated_test_names_keep_distinct_counterexamples():
+    snapshot = failures(
+        [
+            event(
+                "pytest",
+                "____ test_value ____\n> assert inc(0) == 1\nE assert -1 == 1\n"
+                "____ test_value ____\n> assert inc(2) == 3\nE assert 1 == 3\n"
+                "FAILED tests/test_a.py::test_value - AssertionError\n"
+                "FAILED tests/test_b.py::test_value - AssertionError\n",
+            )
+        ]
+    )
+    first = next(f for f in snapshot if "test_a.py" in f.detail)
+    second = next(f for f in snapshot if "test_b.py" in f.detail)
+    assert "inc(0)" in first.detail and "inc(2)" not in first.detail
+    assert "inc(2)" in second.detail and "inc(0)" not in second.detail

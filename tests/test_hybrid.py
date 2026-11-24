@@ -155,6 +155,11 @@ def test_two_repairs_send_resolved_and_remaining_public_failures(
     delta = calls[1][1]["evidence_delta"]
     assert len(delta["resolved"]) == len(delta["remaining"]) == 1
     assert not delta["new"]
+    initial = calls[0][1]["evidence_delta"]["new"]
+    assert any("assert inc(0) == 1" in failure["detail"] for failure in initial)
+    assert any("assert double(2) == 4" in failure["detail"] for failure in initial)
+    assert "assert inc(0) == 1" in delta["resolved"][0]["detail"]
+    assert "assert double(2) == 4" in delta["remaining"][0]["detail"]
     assert all(source for source, _ in calls)
     assert all(
         event.metadata["verification_complete"]
