@@ -42,6 +42,7 @@ def run_command(
     *,
     env: dict[str, str | None] | None = None,
     use_current_python: bool = True,
+    non_interactive: bool = False,
 ) -> CommandResult:
     argv = split_command(command) if isinstance(command, str) else command
     if use_current_python and argv and argv[0].lower() in {"python", "python.exe"}:
@@ -66,6 +67,7 @@ def run_command(
             errors="replace",
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            stdin=subprocess.DEVNULL if non_interactive else None,
             env=environment,
             shell=False,
         )

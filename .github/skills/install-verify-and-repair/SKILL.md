@@ -1,12 +1,12 @@
 ---
 name: install-verify-and-repair
-description: Install Verify and Repair with normal code generation and budgeted automatic counterexample repair. Use only when the user explicitly requests installation or setup.
+description: Install same-agent MCP verification for Codex, Claude Code, Cursor or another harness, or the Copilot/Agency repair controller. Use only for explicit installation or setup.
 disable-model-invocation: true
 ---
 
 # Install Verify and Repair
 
-Install the controller and a workspace-scoped custom agent. Do not repair code
+Install verification tools and a workspace-scoped integration. Do not repair code
 as part of installation. Questions must continue to be answered normally.
 
 This skill contains its entire workflow; it needs no adjacent installer script.
@@ -19,12 +19,14 @@ but do not invent a test command or silently expand editable paths:
 
 - An installation directory for the controller, outside the target repository.
 - A target workspace for the agent.
-- Whether to defer repair configuration until an approved repair is needed.
-- If configuring repair now: an existing Git repository, exact existing Python
+- Integration: same-agent MCP (Codex, Claude Code, Cursor or another tool host),
+  or the Copilot/Agency child-controller workflow.
+- For child-controller mode, whether to defer repair configuration.
+- If configuring child repair now: an existing Git repository, exact existing Python
   implementation-file allowlist, public read-only context and public test command
   with an explicit project interpreter.
-- Backend: Copilot CLI or Agency; optionally an explicit native executable path.
-- A model accessible to that account, or the default gpt-6.1-sol.
+- For child-controller mode: Copilot CLI or Agency, optional native executable
+  path, and a model accessible to that account (default gpt-6.1-sol).
 - The repair budget limits to present for task-specific approval before testing.
 
 Explain that installation downloads code and installs Python dependencies.
@@ -56,6 +58,12 @@ approvals. Check the target has no unfinished controller repair running.
 
 Run the checkout's `setup.ps1` using the agreed Python executable. This creates
 the controller's local virtual environment and installs its declared dependencies.
+For same-agent MCP mode, also run its `.venv\Scripts\python.exe -m pip install -e
+".[mcp]"` from that checkout, then follow section 4's MCP branch. Do not require
+a Copilot/Agency account or create a child-controller task config in this mode.
+The chosen harness performs generation and repair with its own model.
+
+For child-controller mode only:
 Do not install or sign in to a coding CLI on the user's behalf. If the selected
 CLI is missing or unauthenticated, explain the README's backend setup steps and
 wait for the user to complete them. Use only help/version commands to probe it.
@@ -87,6 +95,43 @@ it, then reuse it if suitable. Ask before changing it, or use an agreed alternat
 
 ## 4. Install the optional workspace agent
 
+For **same-agent MCP**, agree on and create a fresh
+`verify-and-repair-harness.json` in the target workspace, using a JSON serializer:
+
+```json
+{
+  "repo": ".",
+  "implementation_files": ["src/logic.py"],
+  "protected_files": ["tests/test_logic.py"],
+  "working_tests": "\"C:\\path\\to\\project-python.exe\" -m pytest -q tests",
+  "max_repairs": 3,
+  "max_wall_seconds": 600,
+  "max_verifier_wall_seconds": 180,
+  "check_timeout_seconds": 60
+}
+```
+
+Replace all paths/commands with agreed values; other languages can use their own
+checks. Ordinary generation may create these files before starting a feedback
+session. Preserve any existing config. This mode does not require Git.
+With permission, register the installed Python executable and arguments
+`-m verify_and_repair.cli mcp --config <absolute harness config>` as a local
+stdio MCP server in the chosen host. Codex uses `mcp_servers` in
+`.codex\config.toml`; Claude Code supports
+`claude mcp add --transport stdio --scope project <name> -- <command> <args>`;
+Cursor uses `mcpServers` in `.cursor\mcp.json`. Merge, never overwrite, existing
+settings and follow host approvals. Set an adequate host tool timeout.
+
+Add project instructions with approval: generate normally; call
+`begin_repair_task` once for an authorized implementation task, then
+`verify_code`; repair from counterexamples using the same model and session ID
+on `next_action=repair`; stop on `done` or `stop`. Questions and tests-only
+requests do not authorize repairs. Do not reset budgets with a new session.
+Use `AGENTS.md` for Codex, `CLAUDE.md` for Claude Code, or a scoped Cursor rule.
+Do not invoke a repair or verification session during installation.
+Continue to section 5 without copying the child-controller agent.
+
+For **child-controller mode**:
 Read any applicable target instructions before making changes. Create
 `.github\agents` inside the target repository if needed, then copy
 `.github\agents\verify-and-repair.agent.md` from the controller checkout.
@@ -115,6 +160,11 @@ before any future repair takes its protected-file snapshot.
 Without running project checks, `solve` or the paid demo:
 
 1. Run `verify-and-repair.ps1 --help`.
+   For MCP mode also run `mcp --help`, check that `mcp.server.fastmcp` imports,
+   and load the config with `verify_and_repair.harness.HarnessConfig.load`.
+   Report the registered host and new instruction/config files; no feedback
+   session or model call is needed to validate installation. Skip the
+   child-controller-specific handoff below.
 2. Run `verify-and-repair.ps1 verify --help`. If a task config was created or
    reused, load it through `verify_and_repair.api.TaskConfig.load`, using the
    installed controller's `.venv\Scripts\python.exe`.

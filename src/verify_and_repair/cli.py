@@ -38,6 +38,12 @@ def main() -> None:
     )
     verification.add_argument("--output", type=Path)
 
+    mcp = commands.add_parser(
+        "mcp", help="Serve counterexample feedback to any local stdio MCP harness"
+    )
+    mcp.add_argument("--config", type=Path, required=True)
+    mcp.add_argument("--state-dir", type=Path)
+
     repair = commands.add_parser(
         "solve", help="Lean repair with automatic tools fallback; public checks only"
     )
@@ -50,6 +56,15 @@ def main() -> None:
     repair.add_argument("--agency-exe")
     repair.add_argument("--output", type=Path)
     args = parser.parse_args()
+
+    if args.cmd == "mcp":
+        from .mcp_server import serve
+
+        try:
+            serve(args.config, args.state_dir)
+        except (ValueError, OSError, TypeError, RuntimeError) as error:
+            parser.error(str(error))
+        return
 
     if args.cmd == "configure":
         repo = args.repo.resolve()
