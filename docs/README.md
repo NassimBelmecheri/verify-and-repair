@@ -8,6 +8,9 @@ The text uses only two core symbols: **P** for code and **F** for public
 failures. Examples explain the workflow before discussing implementation
 boundaries and results. The historical experiment is distinguished from the
 fresh Copilot demonstration.
+The normal-agent extension is described separately: ordinary file creation
+and tool use, checks-only verification at testing checkpoints, and approval
+before paid repair. The historical benchmark does not evaluate this extension.
 
 ## Compile the included source
 
